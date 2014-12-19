@@ -237,16 +237,60 @@ class Option extends Eloquent {
 	}
 
 	public static function get_options(){
-		$db_options = array();
 		//Cache::forget('qa_settings');
+		$db_options = array();
 		if (Cache::has('qa_settings')){ 
-	    		$db_options = Cache::get('qa_settings');
-	    	}
-	    	else {
-	    		$db_options = Option::qa_db_get_options();		
-				Cache::put('qa_settings', $db_options, 100);
-	    	}
-	    	return $db_options;
+    		$db_options = Cache::get('qa_settings');
+    	}
+    	else {
+    		$db_options = Option::qa_db_get_options();		
+			Cache::put('qa_settings', $db_options, 10);
+    	}
+    	return $db_options;
+	}
+
+	/*
+	Return an array of [points] => [user title] from the 'points_to_titles' option, to pass to qa_get_points_title_html()
+	*/
+
+	public static function qa_get_points_to_titles(){
+		$qa_points_title_cache=array();
+		$pairs=explode(',', Setting::qa_opt('points_to_titles'));
+		foreach ($pairs as $pair) {
+			$spacepos=strpos($pair, ' ');
+			if (is_numeric($spacepos)) {
+				$points=trim(substr($pair, 0, $spacepos));
+				$title=trim(substr($pair, $spacepos));
+				if (is_numeric($points) && strlen($title)){
+					$qa_points_title_cache[(int)$points]=$title;
+				}
+			}
+		}
+		krsort($qa_points_title_cache, SORT_NUMERIC);
+		return $qa_points_title_cache;
+	}
+
+	public static function update_usertitle_option(){
+		//echo Input::get('title');die;
+		$find = Input::get('old_points').' '.Input::get('old_title');
+		$replace =  Input::get('points').' '.Input::get('title');;
+		$updated_data = DB::table('options')
+            ->where('title','points_to_titles')
+            ->update(array('content' => DB::raw("replace(content,'".$find."','".$replace."')")));
+           // echo "<pre>"; print_r($updated_data);die;
+
+        //Update in cache also...
+        if (Cache::has('qa_settings')){
+        	$updated_record = DB::table('options')->select('content','title')->where('title', 'points_to_titles')->get();
+        	$updated_record = $updated_record[0];
+        	//echo "<pre>"; print_r($updated_record);die;
+        	$db_options = Cache::get('qa_settings');
+        	if(isset($updated_record->title)){
+        		$db_options[$updated_record->title] = $updated_record->content;
+        		Cache::put('qa_settings', $db_options, 100);
+        	}
+        }
+
 	}
 
 	/** 
@@ -275,6 +319,92 @@ class Option extends Eloquent {
 			Option::qa_db_set_option($name, $value);
 			//$qa_options_cache[$name]=$value;
 		}
+	}
+
+	/*
+	Returns an array containing all the calculation formulae for the userpoints table. Each element of this
+	array is for one column - the key contains the column name, and the value is a further array of two elements.
+	The element 'formula' contains the SQL fragment that calculates the columns value for one or more users,
+	where the ~ symbol within the fragment is substituted for a constraint on which users we are interested in.
+	The element 'multiple' specifies what to multiply each column by to create the final sum in the points column.
+	*/
+
+	public static function qa_db_points_calculations(){
+		$options = Setting::qa_get_options(Option::qa_db_points_option_names());
+		return array(
+			'qposts' => array(
+				'multiple' => $options['points_multiple']*$options['points_post_q'],
+				'formula' => "COUNT(*) AS qposts FROM ^posts AS userid_src WHERE userid~ AND type='Q'",
+			),
+			
+			'aposts' => array(
+				'multiple' => $options['points_multiple']*$options['points_post_a'],
+				'formula' => "COUNT(*) AS aposts FROM ^posts AS userid_src WHERE userid~ AND type='A'",
+			),
+			
+			'cposts' => array(
+				'multiple' => 0,
+				'formula' => "COUNT(*) AS cposts FROM ^posts AS userid_src WHERE userid~ AND type='C'",
+			),
+			
+			'aselects' => array(
+				'multiple' => $options['points_multiple']*$options['points_select_a'],
+				'formula' => "COUNT(*) AS aselects FROM ^posts AS userid_src WHERE userid~ AND type='Q' AND selchildid IS NOT NULL",
+			),
+			
+			'aselecteds' => array(
+				'multiple' => $options['points_multiple']*$options['points_a_selected'],
+				'formula' => "COUNT(*) AS aselecteds FROM ^posts AS userid_src JOIN ^posts AS questions ON questions.selchildid=userid_src.postid WHERE userid_src.userid~ AND userid_src.type='A' AND NOT (questions.userid<=>userid_src.userid)",
+			),
+			
+			'qupvotes' => array(
+				'multiple' => $options['points_multiple']*$options['points_vote_up_q'],
+				'formula' => "COUNT(*) AS qupvotes FROM ^uservotes AS userid_src JOIN ^posts ON userid_src.postid=^posts.postid WHERE userid_src.userid~ AND LEFT(^posts.type, 1)='Q' AND userid_src.vote>0",
+			),
+			
+			'qdownvotes' => array(
+				'multiple' => $options['points_multiple']*$options['points_vote_down_q'],
+				'formula' => "COUNT(*) AS qdownvotes FROM ^uservotes AS userid_src JOIN ^posts ON userid_src.postid=^posts.postid WHERE userid_src.userid~ AND LEFT(^posts.type, 1)='Q' AND userid_src.vote<0",
+			),
+			
+			'aupvotes' => array(
+				'multiple' => $options['points_multiple']*$options['points_vote_up_a'],
+				'formula' => "COUNT(*) AS aupvotes FROM ^uservotes AS userid_src JOIN ^posts ON userid_src.postid=^posts.postid WHERE userid_src.userid~ AND LEFT(^posts.type, 1)='A' AND userid_src.vote>0",
+			),
+			
+			'adownvotes' => array(
+				'multiple' => $options['points_multiple']*$options['points_vote_down_a'],
+				'formula' => "COUNT(*) AS adownvotes FROM ^uservotes AS userid_src JOIN ^posts ON userid_src.postid=^posts.postid WHERE userid_src.userid~ AND LEFT(^posts.type, 1)='A' AND userid_src.vote<0",
+			),
+			
+			'qvoteds' => array(
+				'multiple' => $options['points_multiple'],
+				'formula' => "COALESCE(SUM(".
+					"LEAST(".((int)$options['points_per_q_voted_up'])."*upvotes,".((int)$options['points_q_voted_max_gain']).")".
+					"-".
+					"LEAST(".((int)$options['points_per_q_voted_down'])."*downvotes,".((int)$options['points_q_voted_max_loss']).")".
+					"), 0) AS qvoteds FROM ^posts AS userid_src WHERE LEFT(type, 1)='Q' AND userid~",
+			),
+			
+			'avoteds' => array(
+				'multiple' => $options['points_multiple'],
+				'formula' => "COALESCE(SUM(".
+					"LEAST(".((int)$options['points_per_a_voted_up'])."*upvotes,".((int)$options['points_a_voted_max_gain']).")".
+					"-".
+					"LEAST(".((int)$options['points_per_a_voted_down'])."*downvotes,".((int)$options['points_a_voted_max_loss']).")".
+					"), 0) AS avoteds FROM ^posts AS userid_src WHERE LEFT(type, 1)='A' AND userid~",
+			),
+			
+			'upvoteds' => array(
+				'multiple' => 0,
+				'formula' => "COALESCE(SUM(upvotes), 0) AS upvoteds FROM ^posts AS userid_src WHERE userid~",
+			),
+
+			'downvoteds' => array(
+				'multiple' => 0,
+				'formula' => "COALESCE(SUM(downvotes), 0) AS downvoteds FROM ^posts AS userid_src WHERE userid~",
+			),
+		);
 	}
 
 	/**
@@ -376,7 +506,7 @@ class Option extends Eloquent {
 	public static function qa_posting_option_names() {
 		$postings = array('do_close_on_select', 'allow_close_questions', 'allow_self_answer', 'allow_multi_answers', 'follow_on_as', 'comment_on_qs', 'comment_on_as', '');
 		/*if (count(qa_list_modules('editor'))>1){ */
-			//array_push($postings, 'editor_for_qs', 'editor_for_as', 'editor_for_cs', '');
+			array_push($postings, 'editor_for_qs', 'editor_for_as', 'editor_for_cs', '');
 		/*}*/
 		array_push($postings, 'show_custom_ask', 'custom_ask', 'extra_field_active', 'extra_field_prompt', 'extra_field_display', 'extra_field_label', 'show_custom_answer', 'custom_answer', 'show_custom_comment', 'custom_comment', '');
 		array_push($postings, 'min_len_q_title', 'max_len_q_title', 'min_len_q_content');

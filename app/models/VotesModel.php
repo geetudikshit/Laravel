@@ -117,4 +117,13 @@ class VotesModel extends Eloquent{
 			}
 		}
 	}
+
+	/*
+	Get the vote for $userid on $postid from the database (or NULL if none)
+	*/
+
+	public static function qa_db_uservote_get($postid, $userid){
+		$result = DB::table('uservotes')->select('vote')->where('postid', $postid)->where('userid',$userid)->first();		
+		return $result->vote;
+	}
 }
