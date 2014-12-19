@@ -468,4 +468,50 @@ class User extends Eloquent implements UserInterface, RemindableInterface {
 		//echo $error;die;		
 		return $error;
 	}
+
+	//manage front end point calculations.........
+	
+	/*
+		Update the userpoints table in the database for $userid and $columns, plus the summary points column.
+		Set $columns to true for all, empty for none, an array for several, or a single value for one.
+		This dynamically builds some fairly crazy looking SQL, but it works, and saves repeat calculations.
+	*/
+	public static function qa_db_points_update_ifuser($userid, $columns) { 
+		if (isset($userid)) {
+			$calculations = Option::qa_db_points_calculations();			
+			$keycolumns = array();
+			if ($columns===true){
+				$keycolumns=$calculations;
+			}
+			elseif (empty($columns)){
+				$keycolumns=array();
+			}
+			elseif (is_array($columns)){
+				$keycolumns=array_flip($columns);
+			}
+			else{
+				$keycolumns=array($columns => true);
+			}			
+			$insertfields='userid, ';
+			$insertvalues='?, ';
+			$insertpoints=(int)Setting::qa_opt('points_base');
+			$updates='';
+			$updatepoints=$insertpoints;
+			foreach ($calculations as $field => $calculation) {
+				$multiple=(int)$calculation['multiple'];				
+				if (isset($keycolumns[$field])) {
+					$insertfields.=$field.', ';
+					$insertvalues.='@_'.$field.':=(SELECT '.$calculation['formula'].'), ';
+					$updates.=$field.'=@_'.$field.', ';
+					$insertpoints.='+('.(int)$multiple.'*@_'.$field.')';
+				}				
+				$updatepoints.='+('.$multiple.'*'.(isset($keycolumns[$field]) ? '@_' : '').$field.')';
+			}
+			$query='INSERT INTO ^userpoints ('.$insertfields.'points) VALUES ('.$insertvalues.$insertpoints.') '.
+				'ON DUPLICATE KEY UPDATE '.$updates.'points='.$updatepoints.'+bonus';				
+			$sql_raw = str_replace('~', "='".($userid)."'", ($query));
+			$final_sql = str_replace('^',DB::getTablePrefix(), $sql_raw);
+			DB::select($final_sql,array($userid));
+		}
+	}
 }
