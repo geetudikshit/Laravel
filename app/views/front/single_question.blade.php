@@ -205,14 +205,12 @@
 							</span>
 						</span>
 						<div class="qa-a-item-buttons">
-                                                    <!--
-							<input type="submit" class="qa-form-light-button qa-form-light-button-edit" title="Edit this answer" value="edit" name="a12_doedit">
+                        	<input type="submit" class="qa-form-light-button qa-form-light-button-edit" title="Edit this answer" value="edit" name="a12_doedit">
 							<input type="submit" class="qa-form-light-button qa-form-light-button-hide" title="Hide this answer" value="hide" onclick="return qa_answer_click(12, 11, this);" name="a12_dohide">
 							<a href="{{URL::to('/ask/follow/'.$ans)}}" class="qa-form-light-button qa-form-light-button-follow" title="Ask a new question relating to this answer" name="related_question">ask related question</a>
 							<input type="submit" class="qa-form-light-button qa-form-light-button-comment" title="Add a comment on this answer" value="comment" onclick="return qa_toggle_element('c{{$ans}}')" name="a12_docomment">
-                                                    -->
-                                                    {{SideButtons::getButtons(with(new ButtonsModel)->getAnswersButtons($record))}}
-                                                </div>
+                            {{SideButtons::getButtons(with(new ButtonsModel)->getAnswersButtons($record))}}
+                        </div>
 						
 						@foreach($data['comments'][$record['postid']] as $record_comments)
 						<!--Comment Section Start-->

@@ -8,6 +8,13 @@
 	{{ Form::open(array('url' => 'doRegister')) }}
 
 	<table class="qa-form-tall-table">
+	@if(Setting::qa_opt('show_custom_register'))
+		<tr>
+			<td class="qa-form-tall-data">
+				<div class="qa-form-tall-note">{{Setting::qa_opt('custom_register')}}</div>
+			</td>
+		</tr>
+	@endif
 		<tr><td class="qa-form-tall-label">Username:</td></tr>
 		<tr>
 			<td class="qa-form-tall-data">

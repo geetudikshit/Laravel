@@ -206,7 +206,7 @@
 /*
 	Lower-level function to execute a query, which automatically retries if there is a MySQL deadlock error
 */
-	{
+	{//echo $query;
 		if (qa_to_override(__FUNCTION__)) { $args=func_get_args(); return qa_call_override(__FUNCTION__, $args); }
 		
 		$db=qa_db_connection();
